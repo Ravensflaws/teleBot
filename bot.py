@@ -9,8 +9,7 @@ import config
 import json
 
 # ---------------- MongoDB Setup ----------------
-MONGO_URI = os.environ.get("MONGO_URI")
-client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
+client = MongoClient(os.environ["MONGO_URI"])
 db = client["telegram_bot"]
 votes_collection = db["votes"]
 polls_collection = db["polls"]
