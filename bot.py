@@ -9,7 +9,12 @@ import config
 import json
 
 # ---------------- MongoDB Setup ----------------
-client = MongoClient(os.environ["MONGO_URI"])
+MONGO_URI = os.environ.get("MONGO_URI")  # safer: returns None if missing
+if not MONGO_URI:
+    raise ValueError("Missing MONGO_URI environment variable!")
+
+client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
+print("Mongo connected!")
 db = client["telegram_bot"]
 votes_collection = db["votes"]
 polls_collection = db["polls"]
