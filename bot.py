@@ -1,194 +1,37 @@
-# from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-# from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-# from pymongo import MongoClient
-# from datetime import datetime, timedelta
-# import config
-
-# # ---------------- MongoDB Setup ----------------
-# client = MongoClient(config.MONGO_URI)
-# db = client["telegram_bot"]
-# votes_collection = db["votes"]
-# polls_collection = db["polls"]
-
-# client.drop_database("telegram_bot")
-
-# MAX_ATTENDEES = 10
-
-# # Options with counts
-# OPTIONS = {
-#     "Me": 1,
-#     "Me +1": 2,
-#     "Me +2": 3,
-#     "Me +3": 4
-# }
-
-# # ---------------- Helpers ----------------
-# def parse_datetime(input_str):
-#     """
-#     Accept multiple date formats, e.g., 'YYYY-MM-DD', 'YYYY-MM-DD HH:MM', 'YYYY-MM-DD HH:MM:SS'
-#     """
-#     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
-#         try:
-#             return datetime.strptime(input_str, fmt)
-#         except ValueError:
-#             continue
-#     return None
-
-# def build_poll_text(poll_date_str):
-#     poll_votes = list(votes_collection.find({"poll_date": poll_date_str}))
-#     total_attendees = sum([OPTIONS[v['choice']] for v in poll_votes])
-#     lines = []
-#     for v in poll_votes:
-#         time_str = v['time'].strftime("%Y-%m-%d %H:%M:%S")
-#         lines.append(f"{v['user']} → {v['choice']} ({v['count']}) at {time_str}")
-#     lines.append(f"\nTotal going: {total_attendees}/{MAX_ATTENDEES}")
-#     return f"Attending ({poll_date_str}) session\n\n" + "\n".join(lines)
-
-# def get_poll_buttons():
-#     return InlineKeyboardMarkup([[InlineKeyboardButton(opt, callback_data=opt)] for opt in OPTIONS.keys()])
-
-# # ---------------- Handlers ----------------
-# async def start_poll(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     args = context.args
-#     poll_date = datetime.now().date()  # default today
-#     if args:
-#         # Join arguments into a single string and parse
-#         input_str = " ".join(args)
-#         parsed_dt = parse_datetime(input_str)
-#         if not parsed_dt:
-#             await update.message.reply_text(
-#                 "Invalid date/time format!\nUse YYYY-MM-DD or YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS"
-#             )
-#             return
-#         poll_date = parsed_dt.date()
-
-#     poll_date_str = poll_date.strftime("%Y-%m-%d")
-
-#     # Prevent multiple polls on same date
-#     if polls_collection.find_one({"poll_date": poll_date_str}):
-#         await update.message.reply_text(f"A poll for {poll_date_str} already exists!")
-#         return
-
-#     # Record the poll
-#     polls_collection.insert_one({"poll_date": poll_date_str, "creator": update.effective_user.username, "time": datetime.now()})
-
-#     # Clear any old votes for this poll
-#     votes_collection.delete_many({"poll_date": poll_date_str})
-
-#     question = f"Attending ({poll_date_str}) session"
-#     await update.message.reply_text(question, reply_markup=get_poll_buttons())
-#     print(f"[INFO] Poll started by {update.effective_user.username} for {poll_date_str}")
-
-# async def vote_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     query = update.callback_query
-#     await query.answer()
-#     choice = query.data
-#     user = query.from_user.username or query.from_user.first_name
-
-#     # Find the poll date from message text
-#     poll_date_str = query.message.text.split("(")[1].split(")")[0]
-
-#     # Check if user already voted
-#     if votes_collection.find_one({"user": user, "poll_date": poll_date_str}):
-#         await query.answer("You already voted! Use /withdraw to vote again.", show_alert=True)
-#         return
-
-#     # Calculate total attendees
-#     poll_votes = list(votes_collection.find({"poll_date": poll_date_str}))
-#     total_attendees = sum([OPTIONS[v['choice']] for v in poll_votes])
-#     if total_attendees + OPTIONS[choice] > MAX_ATTENDEES:
-#         await query.answer("Cannot add: total attendees limit reached!", show_alert=True)
-#         return
-
-#     # Insert vote
-#     votes_collection.insert_one({
-#         "user": user,
-#         "choice": choice,
-#         "count": OPTIONS[choice],
-#         "time": datetime.now(),
-#         "poll_date": poll_date_str
-#     })
-
-#     # Update the main poll (global message)
-#     display_text = build_poll_text(poll_date_str)
-#     await query.edit_message_text(text=display_text, reply_markup=get_poll_buttons())
-
-#     # Send personal controls only to this user (Withdraw button)
-#     withdraw_keyboard = InlineKeyboardMarkup(
-#         [[InlineKeyboardButton("Withdraw", callback_data=f"withdraw_{poll_date_str}")]]
-#     )
-#     await query.from_user.send_message(
-#         text=f"You voted **{choice}** for {poll_date_str}.",
-#         reply_markup=withdraw_keyboard
-#     )
-
-#     print(f"[INFO] {user} voted {choice} for {poll_date_str}")
-
-# async def withdraw_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     query = update.callback_query
-#     user = query.from_user.username or query.from_user.first_name
-
-#     # Parse poll_date from callback_data
-#     poll_date_str = query.data.split("_")[1]
-
-#     votes_collection.delete_many({"user": user, "poll_date": poll_date_str})
-
-#     # Update main poll
-#     display_text = build_poll_text(poll_date_str)
-#     await context.bot.edit_message_text(
-#         chat_id=query.message.chat_id,
-#         message_id=query.message.message_id - 1,  # the main poll message
-#         text=display_text,
-#         reply_markup=get_poll_buttons()
-#     )
-
-#     await query.edit_message_text("You withdrew your vote.")
-#     print(f"[INFO] {user} withdrew vote for {poll_date_str}")
-
-# # ---------------- Main ----------------
-# if __name__ == "__main__":
-#     app = ApplicationBuilder().token(config.BOT_TOKEN).build()
-#     app.add_handler(CommandHandler("poll", start_poll))
-#     app.add_handler(CallbackQueryHandler(vote_handler))
-#     app.add_handler(CommandHandler("withdraw", withdraw_vote))
-
-#     print("Bot is running...")
-#     try:
-#         app.run_polling()
-#     except KeyboardInterrupt:
-#         print("\nBot stopped gracefully.")
-
-
-
-
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-from pymongo import MongoClient
 from datetime import datetime
+from pymongo import MongoClient
+from wcwidth import wcswidth
+import certifi
+import os
 import config
+import json
 
 # ---------------- MongoDB Setup ----------------
-client = MongoClient(config.MONGO_URI)
+MONGO_URI = os.environ.get("MONGO_URI")
+client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
 db = client["telegram_bot"]
 votes_collection = db["votes"]
 polls_collection = db["polls"]
 
-client.drop_database("telegram_bot")
+# ---------------- Limits ----------------
+MAX_ATTENDEES = 20
+MAX_SHADOWS = 2
 
-MAX_ATTENDEES = 10
-
-# Options with attendee counts
-OPTIONS = {
+# Numeric attendee options
+ATTENDEE_OPTIONS = {
     "Me": 1,
     "Me +1": 2,
     "Me +2": 3,
-    "Me +3": 4,
-    "Withdraw": 0   # special case
+    "Me +3": 4
 }
+
+# Buttons order
+BUTTON_ORDER = list(ATTENDEE_OPTIONS.keys()) + ["Shadow", "Withdraw Vote", "Withdraw Shadow"]
 
 # ---------------- Helpers ----------------
 def parse_datetime(input_str):
-    """Accepts multiple formats for poll date input."""
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
             return datetime.strptime(input_str, fmt)
@@ -196,118 +39,241 @@ def parse_datetime(input_str):
             continue
     return None
 
-def build_poll_text(poll_date_str):
-    """Builds the message text showing all votes."""
-    poll_votes = list(votes_collection.find({"poll_date": poll_date_str}))
-    total_attendees = sum([OPTIONS[v['choice']] for v in poll_votes])
-    lines = []
+def get_poll_buttons(poll_date_str):
+    """Return InlineKeyboardMarkup with poll_date embedded for callback"""
+    poll_data = votes_collection.find({"poll_date": poll_date_str})
+    votes = list(poll_data)
 
-    for v in poll_votes:
-        time_str = v['time'].strftime("%Y-%m-%d %H:%M:%S")
-        lines.append(f"{v['user']} → {v['choice']} ({v['count']}) at {time_str}")
+    # Count current totals
+    current_attendees = sum(ATTENDEE_OPTIONS.get(v["choice"], 0) for v in votes if v.get("choice") != "Shadow")
+    shadow_count = sum(1 for v in votes if v.get("choice") == "Shadow")
 
-    lines.append(f"\nTotal going: {total_attendees}/{MAX_ATTENDEES}")
-    return f"Attending ({poll_date_str}) session\n\n" + "\n".join(lines)
-
-def get_poll_buttons():
-    """All options visible for everyone, always."""
-    buttons = [[InlineKeyboardButton(opt, callback_data=opt)] for opt in OPTIONS.keys()]
+    buttons = []
+    for opt in BUTTON_ORDER:
+        # Remove buttons if max reached
+        if opt in ATTENDEE_OPTIONS and current_attendees >= MAX_ATTENDEES:
+            continue
+        if opt == "Shadow" and shadow_count >= MAX_SHADOWS:
+            continue
+        buttons.append([InlineKeyboardButton(opt, callback_data=json.dumps({"choice": opt, "poll": poll_date_str}))])
     return InlineKeyboardMarkup(buttons)
+
+def _escape_html(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+def _pad(s: str, width: int, align: str = "left") -> str:
+    s = str(s)
+    diff = width - len(s)
+    if diff <= 0:
+        return s[:width]
+    return (s + " " * diff) if align == "left" else (" " * diff + s)
+
+def get_poll_data(poll_date_str):
+    votes = list(votes_collection.find({"poll_date": poll_date_str}))
+    shadows = [v for v in votes if v.get("choice") == "Shadow"]
+    attendee_votes = [v for v in votes if v.get("choice") != "Shadow"]
+
+    attendees = []
+    waitlist = []
+    extended_attendees = []
+
+    total = 0
+    for v in attendee_votes:
+        pax = v["count"]
+        if total < 10:
+            if total + pax <= 10:
+                attendees.append(v)
+                total += pax
+            else:
+                waitlist.append(v)
+        elif total < 14:
+            waitlist.append(v)
+            total += pax
+        else:
+            extended_attendees.append(v)
+
+    if total >= 14:
+        attendees = attendees + waitlist + extended_attendees
+        waitlist = []
+
+    return {"attendees": attendees, "waitlist": waitlist, "shadows": shadows}
+
+def _make_attendee_table(attendees, max_attendees):
+    name_w = max(4, max((len(v["user"]) for v in attendees), default=0))
+    time_w = 16  # 'YYYY-MM-DD HH:MM'
+    pax_w = 3
+
+    lines = []
+    lines.append(f"{_pad('Name', name_w)} | {_pad('Reaction Time', time_w)} | {_pad('Pax', pax_w, 'right')}")
+    lines.append(f"{'-'*name_w}-+-{'-'*time_w}-+-{'-'*pax_w}")
+
+    total = 0
+    for v in attendees:
+        lines.append(
+            f"{_pad(v['user'], name_w)} | {_pad(v['time'].strftime('%Y-%m-%d %H:%M'), time_w)} | {_pad(v['count'], pax_w, 'right')}"
+        )
+        total += v['count']
+
+    lines.append(f"Total Attending: {total}/{max_attendees}")
+    return "\n".join(lines)
+
+def _make_shadow_table(shadows, max_shadows):
+    name_w = max(7, max((len(v["user"]) for v in shadows), default=0))
+    time_w = 16
+
+    lines = []
+    lines.append(f"{_pad('Shadows', name_w)} | {_pad('Reaction Time', time_w)}")
+    lines.append(f"{'-'*name_w}-+-{'-'*time_w}")
+
+    for v in shadows:
+        lines.append(f"{_pad(v['user'], name_w)} | {_pad(v['time'].strftime('%Y-%m-%d %H:%M'), time_w)}")
+
+    lines.append(f"Total Shadows: {len(shadows)}/{max_shadows}")
+    return "\n".join(lines)
+
+def build_poll_text(poll_date_str, poll_data):
+    attendees = poll_data.get("attendees", [])
+    waitlist = poll_data.get("waitlist", [])
+    shadows = poll_data.get("shadows", [])
+
+    parts = [f"📅 Poll for {_escape_html(poll_date_str)}"]
+
+    # Attendees table
+    if attendees:
+        att_table = _make_attendee_table(attendees, MAX_ATTENDEES)
+        parts.append(f"<pre>{_escape_html(att_table)}</pre>")
+
+    # Waitlist table
+    if waitlist:
+        wait_table = _make_attendee_table(waitlist, MAX_ATTENDEES)
+        parts.append("<b>Waitlist:</b>")
+        parts.append(f"<pre>{_escape_html(wait_table)}</pre>")
+
+    # Shadows table
+    if shadows:
+        sh_table = _make_shadow_table(shadows, MAX_SHADOWS)
+        parts.append(f"<pre>{_escape_html(sh_table)}</pre>")
+    else:
+        parts.append("<i>No shadows yet.</i>")
+
+    parts.append("⚡️ Use the buttons below to vote or withdraw.")
+    return "\n\n".join(parts)
 
 # ---------------- Handlers ----------------
 async def start_poll(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
-    poll_date = datetime.now().date()  # default today
-
-    if args:
-        input_str = " ".join(args)
-        parsed_dt = parse_datetime(input_str)
-        if not parsed_dt:
-            await update.message.reply_text(
-                "Invalid date/time format!\nUse YYYY-MM-DD or YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS"
-            )
-            return
-        poll_date = parsed_dt.date()
-
-    poll_date_str = poll_date.strftime("%Y-%m-%d")
-
-    # Prevent multiple polls on same date
-    if polls_collection.find_one({"poll_date": poll_date_str}):
-        await update.message.reply_text(f"A poll for {poll_date_str} already exists!")
+    if not args:
+        instructions = (
+            "📅 *How to start a poll:*\n\n"
+            "Use `/poll YYYY-MM-DD` or `/poll YYYY-MM-DD HH:MM` or `/poll YYYY-MM-DD HH:MM:SS`\n"
+            "Example: `/poll 2025-09-20 19:30`"
+        )
+        await update.message.reply_text(instructions, parse_mode="HTML")
         return
 
-    # Record poll in DB
+    input_str = " ".join(args)
+    parsed_dt = parse_datetime(input_str)
+    if not parsed_dt:
+        await update.message.reply_text("❌ Invalid date/time format.")
+        return
+
+    poll_date_str = parsed_dt.strftime("%Y-%m-%d")
+
+    if polls_collection.find_one({"poll_date": poll_date_str}):
+        await update.message.reply_text(f"⚠️ A poll for {poll_date_str} already exists!")
+        return
+
     polls_collection.insert_one({
         "poll_date": poll_date_str,
         "creator": update.effective_user.username,
         "time": datetime.now()
     })
-
-    # Clear votes for this poll
     votes_collection.delete_many({"poll_date": poll_date_str})
 
     question = f"Attending ({poll_date_str}) session"
-    await update.message.reply_text(question, reply_markup=get_poll_buttons())
+    await update.message.reply_text(question, reply_markup=get_poll_buttons(poll_date_str))
     print(f"[INFO] Poll started by {update.effective_user.username} for {poll_date_str}")
+
+async def safe_edit_message(message, text, reply_markup=None):
+    try:
+        await message.edit_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        if "Message is not modified" not in str(e):
+            print(f"[WARN] Could not edit message: {e}")
+
 
 async def vote_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    choice = query.data
-    user = query.from_user.username or query.from_user.first_name
 
     try:
-        poll_date_str = query.message.text.split("(")[1].split(")")[0]
+        data = json.loads(query.data)
+        choice = data["choice"]
+        poll_date_str = data["poll"]
     except Exception:
-        await query.answer("Error: Poll date missing.", show_alert=True)
+        await query.answer("❌ Invalid callback data.", show_alert=True)
         return
 
-    # Handle Withdraw
-    if choice == "Withdraw":
-        existing_vote = votes_collection.find_one({"user": user, "poll_date": poll_date_str})
-        if not existing_vote:
-            await query.answer("You haven't voted yet!", show_alert=True)
-            return
-
-        votes_collection.delete_many({"user": user, "poll_date": poll_date_str})
-        display_text = build_poll_text(poll_date_str)
-        await query.message.edit_text(text=display_text, reply_markup=get_poll_buttons())
-        await query.answer("Your vote has been withdrawn.")
-        print(f"[INFO] {user} withdrew vote for {poll_date_str}")
-        return
-
-    # Handle voting
-    if votes_collection.find_one({"user": user, "poll_date": poll_date_str}):
-        await query.answer("You already voted! Withdraw first to change.", show_alert=True)
-        return
-
+    user = query.from_user.username or query.from_user.first_name
     poll_votes = list(votes_collection.find({"poll_date": poll_date_str}))
-    total_attendees = sum([OPTIONS[v['choice']] for v in poll_votes])
-    if total_attendees + OPTIONS[choice] > MAX_ATTENDEES:
-        await query.answer("Cannot add: total attendees limit reached!", show_alert=True)
-        return
+    existing = next((v for v in poll_votes if v["user"] == user), None)
 
-    votes_collection.insert_one({
-        "user": user,
-        "choice": choice,
-        "count": OPTIONS[choice],
-        "time": datetime.now(),
-        "poll_date": poll_date_str
-    })
+    # Withdraw logic
+    if choice.startswith("Withdraw"):
+        if not existing:
+            await query.answer("No vote to withdraw!", show_alert=True)
+            return
+        votes_collection.delete_many({"user": user, "poll_date": poll_date_str})
+        await query.answer("Your vote has been withdrawn.")
+    else:
+        # New vote logic
+        count = ATTENDEE_OPTIONS.get(choice, 0)
+        if choice == "Shadow":
+            if any(v["user"] == user and v["choice"] == "Shadow" for v in poll_votes):
+                await query.answer("Already a shadow!", show_alert=True)
+                return
+            votes_collection.insert_one({
+                "user": user,
+                "choice": "Shadow",
+                "count": 0,
+                "time": datetime.now(),
+                "poll_date": poll_date_str
+            })
+            await query.answer("You are now a Shadow.")
+        else:
+            current_total = sum(v["count"] for v in poll_votes if v.get("choice") != "Shadow")
+            if current_total + count > 20:
+                await query.answer("❌ Total attendees limit reached!", show_alert=True)
+                return
+            if existing and existing.get("choice") != "Shadow":
+                votes_collection.delete_one({"_id": existing["_id"]})
+            votes_collection.insert_one({
+                "user": user,
+                "choice": choice,
+                "count": count,
+                "time": datetime.now(),
+                "poll_date": poll_date_str
+            })
+            await query.answer(f"You voted {choice}.")
 
-    display_text = build_poll_text(poll_date_str)
-    await query.message.edit_text(text=display_text, reply_markup=get_poll_buttons())
-    await query.answer(f"You voted {choice}.")
-    print(f"[INFO] {user} voted {choice} for {poll_date_str}")
-
+    # Refresh display
+    poll_data = get_poll_data(poll_date_str)
+    display_text = build_poll_text(poll_date_str, poll_data)
+    await safe_edit_message(query.message, display_text, reply_markup=get_poll_buttons(poll_date_str))
 # ---------------- Main ----------------
 if __name__ == "__main__":
     app = ApplicationBuilder().token(config.BOT_TOKEN).build()
     app.add_handler(CommandHandler("poll", start_poll))
     app.add_handler(CallbackQueryHandler(vote_handler))
 
-    print("Bot is running...")
-    try:
-        app.run_polling()
-    except KeyboardInterrupt:
+    async def on_shutdown(application):
         print("\nBot stopped gracefully.")
+
+    app.post_stop = on_shutdown
+    print("Bot is running...")
+    app.run_polling()
