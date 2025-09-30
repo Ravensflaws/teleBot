@@ -138,7 +138,13 @@ def _make_attendee_table(attendees, max_attendees):
         )
         total += v['count']
 
-    lines.append(f"Total Attending: {total}/{max_attendees}")
+    int maximum = 7
+    if total > 7: 
+        maximum = 10
+    elif total > 14:
+        maximum = 20
+    
+    lines.append(f"Total Attending: {total}/{maximum}")
     return "\n".join(lines)
 
 def _make_shadow_table(shadows, max_shadows):
@@ -308,6 +314,7 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
 
 
 
