@@ -30,6 +30,15 @@ def init_db():
     polls_collection = db["polls"]
     print("✅ MongoDB Connected!")
 
+
+# ---------------- INITIALIZE BOT TOKEN AT RUNTIME ----------------
+def init_bot_token():
+    bot_token = os.environ.get("BOT_TOKEN")
+    if not bot_token:
+        raise Exception("❌ BOT_TOKEN not found. Did you set it in Railway → Variables?")
+    print("✅ Bot Token Loaded!")
+    return bot_token
+
 # ---------------- Limits ----------------
 MAX_ATTENDEES = 20
 MAX_SHADOWS = 2
@@ -283,6 +292,7 @@ async def vote_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------- Main ----------------
 if __name__ == "__main__":
     init_db()  # ✅ Connect to Mongo **only now**
+    bot_token = init_bot_token()  # ✅ Load Token
     
     app = ApplicationBuilder().token(config.BOT_TOKEN).build()
     app.add_handler(CommandHandler("poll", start_poll))
@@ -294,5 +304,6 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
 
 
