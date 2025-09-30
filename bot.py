@@ -188,9 +188,13 @@ async def start_poll(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
         instructions = (
-            "📅 *How to start a poll:*\n\n"
-            "Use `/poll YYYY-MM-DD` or `/poll YYYY-MM-DD HH:MM` or `/poll YYYY-MM-DD HH:MM:SS`\n"
-            "Example: `/poll 2025-09-20 19:30`"
+            "📅 <b>How to start a poll:</b><br><br>"
+            "Use one of the following formats:<br>"
+            "<code>/poll YYYY-MM-DD</code><br>"
+            "<code>/poll YYYY-MM-DD HH:MM</code><br>"
+            "<code>/poll YYYY-MM-DD HH:MM:SS</code><br><br>"
+            "Example:<br>"
+            "<code>/poll 2025-09-20 19:30</code>"
         )
         await update.message.reply_text(instructions, parse_mode="HTML")
         return
@@ -304,6 +308,7 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
 
 
 
