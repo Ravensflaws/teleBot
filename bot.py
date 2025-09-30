@@ -97,10 +97,8 @@ def _make_attendee_table(attendees, max_attendees):
         lines.append(escape_md_v2(line))
         total += v['count']
 
-    maximum = 7
-    if total > 7:
-        maximum = 10
-    elif total > 14:
+    maximum = 10
+    if total > 14:
         maximum = 20
     lines.append(escape_md_v2(f"Total Attending: {total}/{maximum}"))
     return "\n".join(lines)
@@ -326,3 +324,4 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
