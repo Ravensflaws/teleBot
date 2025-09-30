@@ -94,7 +94,7 @@ def _make_attendee_table(attendees, max_attendees):
 
     total = 0
     for v in attendees:
-        formatted_time = v['time'].strftime('%Y-%m-%d %H:%M')
+        formatted_time = v['time'].strftime('%Y-%m-%d %H:%M') if isinstance(v['time'], datetime) else str(v['time'])[:16].replace('T', ' ')
         name_with_choice = f"{v['user']} ({v['choice']})"
         line = f"{_pad(name_with_choice, name_w)} | {_pad(formatted_time, time_w)} | {_pad(v['count'], pax_w, 'right')}"
         raw_lines.append(line)  # ✅ Append each line
@@ -118,7 +118,7 @@ def _make_shadow_table(shadows, max_shadows):
     raw_lines = [header, underline]
 
     for v in shadows:
-        formatted_time = v['time'].strftime('%Y-%m-%d %H:%M')
+        formatted_time = v['time'].strftime('%Y-%m-%d %H:%M') if isinstance(v['time'], datetime) else str(v['time'])[:16].replace('T', ' ')
         line = f"{_pad(v['user'], name_w)} | {_pad(formatted_time, time_w)}"
         raw_lines.append(line)  # ✅ Append each line
 
@@ -330,6 +330,7 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
 
 
 
