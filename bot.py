@@ -17,6 +17,7 @@ polls_collection = None
 
 # ---------------- INITIALIZE MONGO AT RUNTIME ----------------
 def init_db():
+    print("ENV VARS:", os.environ)
     global client, db, votes_collection, polls_collection
     mongo_uri = os.environ.get("MONGO_URI")
 
@@ -293,4 +294,5 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
 
