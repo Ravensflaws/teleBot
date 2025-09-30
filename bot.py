@@ -294,7 +294,7 @@ if __name__ == "__main__":
     init_db()  # ✅ Connect to Mongo **only now**
     bot_token = init_bot_token()  # ✅ Load Token
     
-    app = ApplicationBuilder().token(config.BOT_TOKEN).build()
+    app = ApplicationBuilder().token(bot_token).build()
     app.add_handler(CommandHandler("poll", start_poll))
     app.add_handler(CallbackQueryHandler(vote_handler))
 
@@ -304,6 +304,7 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
 
 
 
