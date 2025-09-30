@@ -9,15 +9,25 @@ import config
 import json
 
 # ---------------- MongoDB Setup ----------------
-MONGO_URI = os.environ.get("MONGO_URI")  # safer: returns None if missing
-if not MONGO_URI:
-    raise ValueError("Missing MONGO_URI environment variable!")
+# Global placeholders (not initialized at import time!)
+client = None
+db = None
+votes_collection = None
+polls_collection = None
 
-client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
-print("Mongo connected!")
-db = client["telegram_bot"]
-votes_collection = db["votes"]
-polls_collection = db["polls"]
+# ---------------- INITIALIZE MONGO AT RUNTIME ----------------
+def init_db():
+    global client, db, votes_collection, polls_collection
+    mongo_uri = os.environ.get("MONGO_URI")
+
+    if not mongo_uri:
+        raise Exception("❌ MONGO_URI not found. Did you set it in Railway → Variables?")
+
+    client = MongoClient(mongo_uri)
+    db = client["telegram_bot"]
+    votes_collection = db["votes"]
+    polls_collection = db["polls"]
+    print("✅ MongoDB Connected!")
 
 # ---------------- Limits ----------------
 MAX_ATTENDEES = 20
@@ -271,6 +281,8 @@ async def vote_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await safe_edit_message(query.message, display_text, reply_markup=get_poll_buttons(poll_date_str))
 # ---------------- Main ----------------
 if __name__ == "__main__":
+    init_db()  # ✅ Connect to Mongo **only now**
+    
     app = ApplicationBuilder().token(config.BOT_TOKEN).build()
     app.add_handler(CommandHandler("poll", start_poll))
     app.add_handler(CallbackQueryHandler(vote_handler))
@@ -281,3 +293,4 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
