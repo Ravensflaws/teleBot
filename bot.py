@@ -87,15 +87,26 @@ def _make_attendee_table(attendees, max_attendees):
 
     lines = []
     header = f"{_pad('Name', name_w)} | {_pad('Reaction Time', time_w)} | {_pad('Pax', pax_w, 'right')}"
-    underline = f"{'-'*name_w} | {'-'*time_w} | {'-'*pax_w}"
+    underline = f"{'-'*(name_w+10)} | {'-'*(time_w+10)} | {'-'*pax_w}"
     lines.append(escape_md_v2(header))
     lines.append(escape_md_v2(underline))
 
     total = 0
     for v in attendees:
-        line = f"{_pad(v['user'], name_w)} | {_pad(v['time'].strftime('%Y-%m-%d %H:%M'), time_w)} | {_pad(v['count'], pax_w, 'right')}"
+        # Convert MongoDB UTC datetime to local timezone
+        dt_local = v['time'].astimezone() if v['time'].tzinfo else v['time']
+        formatted_time = dt_local.strftime('%Y-%m-%d %H:%M')
+        
+        # Include chosen option next to username
+        name_with_choice = f"{v['user']} ({v['choice']})"
+        
+        # Build aligned table line
+        line = f"{_pad(name_with_choice, name_w)} | {_pad(formatted_time, time_w)} | {_pad(v['count'], pax_w, 'right')}"
+        
+        # Escape for MarkdownV2
         lines.append(escape_md_v2(line))
         total += v['count']
+
 
     maximum = 10
     if total > 14:
@@ -114,7 +125,10 @@ def _make_shadow_table(shadows, max_shadows):
     lines.append(escape_md_v2(underline))
 
     for v in shadows:
-        line = f"{_pad(v['user'], name_w)} | {_pad(v['time'].strftime('%Y-%m-%d %H:%M'), time_w)}"
+        # Convert MongoDB UTC datetime to local timezone
+        dt_local = v['time'].astimezone() if v['time'].tzinfo else v['time']
+        # Format as YYYY-MM-DD HH:MM
+        formatted_time = dt_local.strftime('%Y-%m-%d %H:%M')
         lines.append(escape_md_v2(line))
 
     lines.append(escape_md_v2(f"Total Shadows: {len(shadows)}/{max_shadows}"))
@@ -324,4 +338,5 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
 
