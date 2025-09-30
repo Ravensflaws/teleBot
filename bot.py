@@ -95,12 +95,7 @@ def _make_attendee_table(attendees, max_attendees):
 
     total = 0
     for v in attendees:
-        dt = v['time']
-        # If tzinfo is None, treat as UTC
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        dt_local = dt.astimezone()  # convert to local timezone
-        formatted_time = dt_local.strftime('%Y-%m-%d %H:%M')
+        formatted_time = v['time'].strftime('%Y-%m-%d %H:%M')
         name_with_choice = f"{v['user']} ({v['choice']})"
         line = f"{_pad(name_with_choice, name_w)} | {_pad(formatted_time, time_w)} | {_pad(v['count'], pax_w, 'right')}"
         lines.append(escape_md_v2(line))
@@ -127,12 +122,7 @@ def _make_shadow_table(shadows, max_shadows):
     lines.append(escape_md_v2(underline))
 
     for v in shadows:
-        dt = v['time']
-        # If tzinfo is None, treat as UTC
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        dt_local = dt.astimezone()  # convert to local timezone
-        formatted_time = dt_local.strftime('%Y-%m-%d %H:%M')
+        formatted_time = v['time'].strftime('%Y-%m-%d %H:%M')
         line = f"{_pad(v['user'], name_w)} | {_pad(formatted_time, time_w)}"
         lines.append(escape_md_v2(line))
 
@@ -344,6 +334,7 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
 
 
 
