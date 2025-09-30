@@ -138,7 +138,7 @@ def _make_attendee_table(attendees, max_attendees):
         )
         total += v['count']
 
-    int maximum = 7
+    maximum = 7
     if total > 7: 
         maximum = 10
     elif total > 14:
@@ -314,6 +314,7 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
 
 
 
