@@ -5,11 +5,9 @@ from pymongo import MongoClient
 from wcwidth import wcswidth
 import certifi
 import os
-import config
 import json
 
 # ---------------- MongoDB Setup ----------------
-# Global placeholders (not initialized at import time!)
 client = None
 db = None
 votes_collection = None
@@ -17,14 +15,14 @@ polls_collection = None
 
 # ---------------- INITIALIZE MONGO AT RUNTIME ----------------
 def init_db():
-    print("ENV VARS:", os.environ)
+    print("ENV VARS:", {k: v for k, v in os.environ.items() if k in ("MONGO_URI", "BOT_TOKEN")})
     global client, db, votes_collection, polls_collection
     mongo_uri = os.environ.get("MONGO_URI")
 
     if not mongo_uri:
         raise Exception("❌ MONGO_URI not found. Did you set it in Railway → Variables?")
 
-    client = MongoClient(mongo_uri)
+    client = MongoClient(mongo_uri, tlsCAFile=certifi.where())
     db = client["telegram_bot"]
     votes_collection = db["votes"]
     polls_collection = db["polls"]
@@ -82,15 +80,55 @@ def get_poll_buttons(poll_date_str):
         buttons.append([InlineKeyboardButton(opt, callback_data=json.dumps({"choice": opt, "poll": poll_date_str}))])
     return InlineKeyboardMarkup(buttons)
 
-def _escape_html(s: str) -> str:
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+# Characters that must be escaped in MarkdownV2
+_MD_V2_SPECIAL = r'_*[]()~`>#+-=|{}.!'
+
+def escape_md(text: str) -> str:
+    """
+    Escape text for Telegram MarkdownV2.
+    This inserts a backslash before each special MarkdownV2 character.
+    """
+    if text is None:
+        return ""
+    s = str(text)
+    # Order matters for backslash itself; replace backslash first
+    s = s.replace("\\", "\\\\")
+    for ch in _MD_V2_SPECIAL:
+        s = s.replace(ch, "\\" + ch)
+    return s
+
+def truncate_to_width(s: str, width: int) -> str:
+    """Truncate string s so that its display width (wcswidth) <= width."""
+    if width <= 0:
+        return ""
+    if wcswidth(s) <= width:
+        return s
+    out = ""
+    cur = 0
+    for ch in s:
+        w = wcswidth(ch)
+        if cur + w > width:
+            break
+        out += ch
+        cur += w
+    return out
 
 def _pad(s: str, width: int, align: str = "left") -> str:
-    s = str(s)
-    diff = width - len(s)
+    """
+    Pad/truncate based on display width (wcswidth).
+    Return raw (unescaped) padded string — escaping is done later when assembling the final line.
+    """
+    s = "" if s is None else str(s)
+    # Ensure truncated to width if needed
+    s = truncate_to_width(s, width)
+    cur_w = wcswidth(s)
+    diff = width - cur_w
     if diff <= 0:
-        return s[:width]
-    return (s + " " * diff) if align == "left" else (" " * diff + s)
+        return s
+    if align == "right":
+        return " " * diff + s
+    else:
+        return s + " " * diff
 
 def get_poll_data(poll_date_str):
     votes = list(votes_collection.find({"poll_date": poll_date_str}))
@@ -123,42 +161,63 @@ def get_poll_data(poll_date_str):
     return {"attendees": attendees, "waitlist": waitlist, "shadows": shadows}
 
 def _make_attendee_table(attendees, max_attendees):
-    name_w = max(4, max((len(v["user"]) for v in attendees), default=0))
-    time_w = 16  # 'YYYY-MM-DD HH:MM'
+    """
+    Build an aligned plain-text table (no code block). Uses spaces for column separation so we
+    don't need '|' or '-' characters (those require escaping).
+    Columns:
+      Name (left), Reaction Time (left), Pax (right)
+    """
+    # compute column widths using raw (unescaped) content
+    name_w = max(4, max((wcswidth(v["user"]) for v in attendees), default=0))
+    time_w = 16  # 'YYYY-MM-DD HH:MM' visible width
     pax_w = 3
 
     lines = []
-    lines.append(f"{_pad('Name', name_w)} | {_pad('Reaction Time', time_w)} | {_pad('Pax', pax_w, 'right')}")
-    lines.append(f"{'-'*name_w}-+-{'-'*time_w}-+-{'-'*pax_w}")
+    # header (raw)
+    header = f"{_pad('Name', name_w)}  {_pad('Reaction Time', time_w)}  {_pad('Pax', pax_w, 'right')}"
+    # underline (use spaces and dashes as visual cue but dashes will be escaped when assembled)
+    underline = f"{'-'*name_w}  {'-'*time_w}  {'-'*pax_w}"
+
+    # escape header and underline for MarkdownV2
+    lines.append(escape_md(header))
+    lines.append(escape_md(underline))
 
     total = 0
     for v in attendees:
-        lines.append(
-            f"{_pad(v['user'], name_w)} | {_pad(v['time'].strftime('%Y-%m-%d %H:%M'), time_w)} | {_pad(v['count'], pax_w, 'right')}"
-        )
-        total += v['count']
+        name_raw = _pad(v["user"], name_w)
+        time_raw = _pad(v["time"].strftime("%Y-%m-%d %H:%M"), time_w)
+        pax_raw = _pad(str(v["count"]), pax_w, "right")
+        line_raw = f"{name_raw}  {time_raw}  {pax_raw}"
+        lines.append(escape_md(line_raw))
+        total += v["count"]
 
+    # determine maximum shown (preserve your existing logic)
     maximum = 7
-    if total > 7: 
+    if total > 7:
         maximum = 10
     elif total > 14:
         maximum = 20
-    
-    lines.append(f"Total Attending: {total}/{maximum}")
+
+    lines.append(escape_md(f"Total Attending: {total}/{maximum}"))
     return "\n".join(lines)
 
 def _make_shadow_table(shadows, max_shadows):
-    name_w = max(7, max((len(v["user"]) for v in shadows), default=0))
+    name_w = max(7, max((wcswidth(v["user"]) for v in shadows), default=0))
     time_w = 16
 
     lines = []
-    lines.append(f"{_pad('Shadows', name_w)} | {_pad('Reaction Time', time_w)}")
-    lines.append(f"{'-'*name_w}-+-{'-'*time_w}")
+    header = f"{_pad('Shadows', name_w)}  {_pad('Reaction Time', time_w)}"
+    underline = f"{'-'*name_w}  {'-'*time_w}"
+
+    lines.append(escape_md(header))
+    lines.append(escape_md(underline))
 
     for v in shadows:
-        lines.append(f"{_pad(v['user'], name_w)} | {_pad(v['time'].strftime('%Y-%m-%d %H:%M'), time_w)}")
+        name_raw = _pad(v["user"], name_w)
+        time_raw = _pad(v["time"].strftime("%Y-%m-%d %H:%M"), time_w)
+        lines.append(escape_md(f"{name_raw}  {time_raw}"))
 
-    lines.append(f"Total Shadows: {len(shadows)}/{max_shadows}")
+    lines.append(escape_md(f"Total Shadows: {len(shadows)}/{max_shadows}"))
     return "\n".join(lines)
 
 def build_poll_text(poll_date_str, poll_data):
@@ -166,27 +225,30 @@ def build_poll_text(poll_date_str, poll_data):
     waitlist = poll_data.get("waitlist", [])
     shadows = poll_data.get("shadows", [])
 
-    parts = [f"📅 Poll for {_escape_html(poll_date_str)}"]
+    parts = []
+    # Title: escape the poll date but keep emoji raw
+    parts.append(f"📅 Poll for {escape_md(poll_date_str)}")
 
     # Attendees table
     if attendees:
         att_table = _make_attendee_table(attendees, MAX_ATTENDEES)
-        parts.append(f"<pre>{_escape_html(att_table)}</pre>")
+        parts.append(att_table)
 
     # Waitlist table
     if waitlist:
         wait_table = _make_attendee_table(waitlist, MAX_ATTENDEES)
-        parts.append("<b>Waitlist:</b>")
-        parts.append(f"<pre>{_escape_html(wait_table)}</pre>")
+        parts.append(f"*Waitlist:*")  # bold-ish (asterisks) will be recognized in MarkdownV2
+        parts.append(wait_table)
 
     # Shadows table
     if shadows:
         sh_table = _make_shadow_table(shadows, MAX_SHADOWS)
-        parts.append(f"<pre>{_escape_html(sh_table)}</pre>")
+        parts.append(sh_table)
     else:
-        parts.append("<i>No shadows yet.</i>")
+        parts.append("_No shadows yet._")  # italic
 
     parts.append("⚡️ Use the buttons below to vote or withdraw.")
+    # Join with blank line for readability
     return "\n\n".join(parts)
 
 # ---------------- Handlers ----------------
@@ -194,27 +256,27 @@ async def start_poll(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
         instructions = (
-            "📅 <b>How to start a poll:\n\n</b>"
+            "📅 *How to start a poll*\n\n"
             "Use one of the following formats:\n"
-            "<code>/poll YYYY-MM-DD</code>\n"
-            "<code>/poll YYYY-MM-DD HH:MM</code>\n"
-            "<code>/poll YYYY-MM-DD HH:MM:SS</code>\n\n"
+            "`/poll YYYY-MM-DD`\n"
+            "`/poll YYYY-MM-DD HH:MM`\n"
+            "`/poll YYYY-MM-DD HH:MM:SS`\n\n"
             "Example:\n"
-            "<code>/poll 2025-09-20 19:30</code>"
+            "`/poll 2025-09-20 19:30`"
         )
-        await update.message.reply_text(instructions, parse_mode="HTML")
+        await update.message.reply_text(instructions, parse_mode="MarkdownV2")
         return
 
     input_str = " ".join(args)
     parsed_dt = parse_datetime(input_str)
     if not parsed_dt:
-        await update.message.reply_text("❌ Invalid date/time format.")
+        await update.message.reply_text("❌ Invalid date/time format.", parse_mode="MarkdownV2")
         return
 
     poll_date_str = parsed_dt.strftime("%Y-%m-%d")
 
     if polls_collection.find_one({"poll_date": poll_date_str}):
-        await update.message.reply_text(f"⚠️ A poll for {poll_date_str} already exists!")
+        await update.message.reply_text(f"⚠️ A poll for {escape_md(poll_date_str)} already exists!", parse_mode="MarkdownV2")
         return
 
     polls_collection.insert_one({
@@ -224,8 +286,8 @@ async def start_poll(update: Update, context: ContextTypes.DEFAULT_TYPE):
     })
     votes_collection.delete_many({"poll_date": poll_date_str})
 
-    question = f"Attending ({poll_date_str}) session"
-    await update.message.reply_text(question, reply_markup=get_poll_buttons(poll_date_str))
+    question = f"Attending ({escape_md(poll_date_str)}) session"
+    await update.message.reply_text(question, reply_markup=get_poll_buttons(poll_date_str), parse_mode="MarkdownV2")
     print(f"[INFO] Poll started by {update.effective_user.username} for {poll_date_str}")
 
 async def safe_edit_message(message, text, reply_markup=None):
@@ -233,13 +295,13 @@ async def safe_edit_message(message, text, reply_markup=None):
         await message.edit_text(
             text=text,
             reply_markup=reply_markup,
-            parse_mode="HTML",
+            parse_mode="MarkdownV2",
             disable_web_page_preview=True,
         )
     except Exception as e:
+        # Only ignore "Message is not modified" errors
         if "Message is not modified" not in str(e):
             print(f"[WARN] Could not edit message: {e}")
-
 
 async def vote_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -293,17 +355,18 @@ async def vote_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "time": datetime.now(),
                 "poll_date": poll_date_str
             })
-            await query.answer(f"You voted {choice}.")
+            await query.answer(f"You voted {escape_md(choice)}.")
 
     # Refresh display
     poll_data = get_poll_data(poll_date_str)
     display_text = build_poll_text(poll_date_str, poll_data)
     await safe_edit_message(query.message, display_text, reply_markup=get_poll_buttons(poll_date_str))
+
 # ---------------- Main ----------------
 if __name__ == "__main__":
-    init_db()  # ✅ Connect to Mongo **only now**
-    bot_token = init_bot_token()  # ✅ Load Token
-    
+    init_db()  # connect to Mongo at runtime
+    bot_token = init_bot_token()  # load Token
+
     app = ApplicationBuilder().token(bot_token).build()
     app.add_handler(CommandHandler("poll", start_poll))
     app.add_handler(CallbackQueryHandler(vote_handler))
@@ -314,11 +377,3 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
-
-
-
-
-
-
-
-
