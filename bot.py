@@ -82,52 +82,48 @@ def _pad(s: str, width: int, align: str = "left") -> str:
 
 def _make_attendee_table(attendees, max_attendees):
     # Calculate column widths
-    name_w = max(4, max((wcswidth(f"{v['user']} ({v['choice']})") for v in attendees), default=0))
+    name_w = max(4, max(len(f"{v['user']} ({v['choice']})") for v in attendees))
     time_w = 16
     pax_w = 3
 
-    lines = []
-    # Header
-    header = f"{_pad('Name', (name_w+10))} | {_pad('Reaction Time', (time_w+10))} | {_pad('Pax', pax_w, 'right')}"
-    underline = f"{'-'*(name_w+15)}-+-{'-'*(time_w+15)}-+-{'-'*pax_w}"
-    lines.append(escape_md_v2(header))
-    lines.append(escape_md_v2(underline))
+    header = f"{_pad('Name', name_w)} | {_pad('Reaction Time', time_w)} | {_pad('Pax', pax_w, 'right')}"
+    underline = f"{'-'*name_w}-+-{'-'*time_w}-+-{'-'*pax_w}"
 
+    raw_lines = [header, underline]
     total = 0
     for v in attendees:
         formatted_time = v['time'].strftime('%Y-%m-%d %H:%M')
         name_with_choice = f"{v['user']} ({v['choice']})"
         line = f"{_pad(name_with_choice, name_w)} | {_pad(formatted_time, time_w)} | {_pad(v['count'], pax_w, 'right')}"
-        lines.append(escape_md_v2(line))
         total += v['count']
 
     # Adjust maximum display
-    maximum = 10
-    if total > 14:
-        maximum = 20
-
-    lines.append(escape_md_v2(f"Total Attending: {total}/{maximum}"))
-    return "\n".join(lines)
+    maximum = 10 if total <= 14 else 20
+    raw_lines.append(f"Total Attending: {total}/{maximum}")
+    # Escape once at the end
+    return "\n".join([escape_md_v2(l) for l in raw_lines])
 
 
 def _make_shadow_table(shadows, max_shadows):
-    # Column widths
-    name_w = max(7, max((wcswidth(v["user"]) for v in shadows), default=0))
-    time_w = 16
+    if not shadows:
+        return escape_md_v2("_No shadows yet._")
 
-    lines = []
+    # Calculate column widths
+    name_w = max(4, max(len(v["user"]) for v in shadows))
+    time_w = 16
     header = f"{_pad('Name', (name_w+10))} | {_pad('Reaction Time', (time_w+10))}"
     underline = f"{'-'*(name_w+15)}-+-{'-'*(time_w+15)}"
-    lines.append(escape_md_v2(header))
-    lines.append(escape_md_v2(underline))
+    raw_lines = [header, underline]
 
     for v in shadows:
         formatted_time = v['time'].strftime('%Y-%m-%d %H:%M')
         line = f"{_pad(v['user'], name_w)} | {_pad(formatted_time, time_w)}"
-        lines.append(escape_md_v2(line))
+        raw_lines.append(line)
 
-    lines.append(escape_md_v2(f"Total Shadows: {len(shadows)}/{max_shadows}"))
-    return "\n".join(lines)
+    raw_lines.append(f"Total Shadows: {len(shadows)}/{max_shadows}")
+    
+    # Escape once at the end
+    return "\n".join([escape_md_v2(l) for l in raw_lines])
 
 
 # ---------------- Poll Data ----------------
@@ -334,6 +330,7 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
 
 
 
