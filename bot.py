@@ -88,14 +88,18 @@ def _make_attendee_table(attendees, max_attendees):
 
     lines = []
     # Header
-    header = f"{_pad('Name', name_w)} | {_pad('Reaction Time', time_w)} | {_pad('Pax', pax_w, 'right')}"
-    underline = f"{'-'*name_w}-+-{'-'*time_w}-+-{'-'*pax_w}"
+    header = f"{_pad('Name', (name_w+10))} | {_pad('Reaction Time', (time_w+10))} | {_pad('Pax', pax_w, 'right')}"
+    underline = f"{'-'*(name_w+15)}-+-{'-'*(time_w+15)}-+-{'-'*pax_w}"
     lines.append(escape_md_v2(header))
     lines.append(escape_md_v2(underline))
 
     total = 0
     for v in attendees:
-        dt_local = v['time'].astimezone() if v['time'].tzinfo else v['time']
+        dt = v['time']
+        # If tzinfo is None, treat as UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt_local = dt.astimezone()  # convert to local timezone
         formatted_time = dt_local.strftime('%Y-%m-%d %H:%M')
         name_with_choice = f"{v['user']} ({v['choice']})"
         line = f"{_pad(name_with_choice, name_w)} | {_pad(formatted_time, time_w)} | {_pad(v['count'], pax_w, 'right')}"
@@ -117,13 +121,17 @@ def _make_shadow_table(shadows, max_shadows):
     time_w = 16
 
     lines = []
-    header = f"{_pad('Name', name_w)} | {_pad('Reaction Time', time_w)}"
-    underline = f"{'-'*name_w}-+-{'-'*time_w}"
+    header = f"{_pad('Name', (name_w+10))} | {_pad('Reaction Time', (time_w+10))}"
+    underline = f"{'-'*(name_w+15)}-+-{'-'*(time_w+15)}"
     lines.append(escape_md_v2(header))
     lines.append(escape_md_v2(underline))
 
     for v in shadows:
-        dt_local = v['time'].astimezone() if v['time'].tzinfo else v['time']
+        dt = v['time']
+        # If tzinfo is None, treat as UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt_local = dt.astimezone()  # convert to local timezone
         formatted_time = dt_local.strftime('%Y-%m-%d %H:%M')
         line = f"{_pad(v['user'], name_w)} | {_pad(formatted_time, time_w)}"
         lines.append(escape_md_v2(line))
@@ -336,6 +344,7 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
 
 
 
