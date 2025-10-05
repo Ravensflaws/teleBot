@@ -80,7 +80,7 @@ def _pad(s: str, width: int, align: str = "left") -> str:
         return s
     return (" " * diff + s) if align == "right" else (s + " " * diff)
 
-def _make_attendee_table(attendees, max_attendees, is_waitlist=False):
+def _make_attendee_table(attendees, max_attendees):
     if not attendees:
         return escape_md_v2("_No attendees yet._")
 
@@ -100,12 +100,7 @@ def _make_attendee_table(attendees, max_attendees, is_waitlist=False):
         raw_lines.append(line)
         total += v['count']
 
-     # Determine capacity
-    if is_waitlist:
-        maximum = 3
-    else:
-        maximum = 10 if total <= 14 else 20
-    
+    maximum = 10 if total <= 14 else 20
     raw_lines.append(f"Total Attending: {total}/{maximum}")
 
     return "\n".join([escape_md_v2(l) for l in raw_lines])
@@ -196,13 +191,13 @@ def build_poll_text(poll_date_str, poll_data):
     parts = [escape_md_v2(f"📅 Poll for {poll_date_str}"), ""]
 
     if attendees:
-        parts.append(_make_attendee_table(attendees, MAX_ATTENDEES, is_waitlist=False))
+        parts.append(_make_attendee_table(attendees, MAX_ATTENDEES))
         parts.append("")
-
+    
     if waitlist:
         parts.append(escape_md_v2("📥 Waitlist"))
         parts.append("")
-        parts.append(_make_attendee_table(waitlist, MAX_ATTENDEES, is_waitlist=True))
+        parts.append(_make_attendee_table(waitlist, MAX_ATTENDEES))
         parts.append("")
 
     if shadows:
@@ -337,6 +332,7 @@ if __name__ == "__main__":
     app.post_stop = on_shutdown
     print("Bot is running...")
     app.run_polling()
+
 
 
 
